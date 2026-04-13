@@ -1,0 +1,22 @@
+4 layer architecture
+
+UI
+=> component
+=> pages
+
+Hook => for managing state and api layers
+=> hooks
+
+State => data store in frontend
+=> auth.context.jsx
+=> ai.context.jsx
+
+
+Api => for communication with backend
+=> services
+   => auth.api.jsx
+
+
+frontend and backend ko connect krne ke liye install package (npm i axios)
+- withCredentials: true ka use ham cookie ko read krne ke liye krte h jab axios ka use hota h 
+  kyu ki without this axios api call krte wqt cookie ko read nhi krta.
