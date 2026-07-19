@@ -98,50 +98,67 @@ async function generateInterviewReport({
   selfDescription,
   jobDescription,
 }) {
-  const prompt = `
-Generate an interview report for a candidate with the following details:
+  const prompt = `You are an expert technical recruiter and interview coach. Analyze the candidate's profile against the job requirements and generate a comprehensive interview preparation report.
+
+CANDIDATE PROFILE:
 Resume: ${resume}
 Self Description: ${selfDescription}
-Job Description: ${jobDescription}
 
-IMPORTANT:
-- Return ONLY valid JSON
-- Do NOT add markdown (no \`\`\`)
-- Do NOT add headings or explanation
-- Follow this exact JSON structure:
+TARGET JOB:
+${jobDescription}
+
+INSTRUCTIONS:
+1. Analyze the job description to identify key technical and soft skills required
+2. Compare candidate's experience with job requirements
+3. Generate realistic, role-specific questions that would actually be asked
+4. Provide detailed, actionable answers covering key points
+5. Identify genuine skill gaps based on job requirements
+6. Create a practical 7-day preparation roadmap
+
+IMPORTANT - Return ONLY valid JSON with NO markdown, NO code blocks, NO extra text:
 
 {
-  "title": "string",
-  "matchScore": number,
+  "title": "Job position title from the job description",
+  "matchScore": "number between 0-100 indicating how well candidate matches the role",
   "technicalQuestions": [
     {
-      "question": "string",
-      "intention": "string",
-      "answer": "string"
+      "question": "Specific technical question related to the job requirements",
+      "intention": "Why interviewer asks this - what they're evaluating (2-3 sentences)",
+      "answer": "Comprehensive answer covering: key concepts, approach, implementation details, example code/pseudocode if relevant, common mistakes to avoid (5-7 sentences minimum)"
     }
   ],
   "behavioralQuestions": [
     {
-      "question": "string",
-      "intention": "string",
-      "answer": "string"
+      "question": "Behavioral question assessing soft skills relevant to the role",
+      "intention": "What interviewer is assessing - specific skill or competency they want to evaluate (2-3 sentences)",
+      "answer": "Complete STAR method answer: Situation (context), Task (responsibility), Action (specific steps taken), Result (quantifiable outcome) with lessons learned (5-7 sentences minimum)"
     }
   ],
   "skillGaps": [
     {
-      "skill": "string",
-      "severity": "low|medium|high"
+      "skill": "Specific skill name missing or weak",
+      "severity": "MUST be ONLY one of: low, medium, or high. Do NOT use any other values like none, critical, minor, etc."
     }
   ],
   "preparationPlan": [
     {
-      "day": number,
-      "focus": "string",
-      "tasks": ["string"]
+      "day": 1-7 ONLY,
+      "focus": "Main focus area for this day",
+      "tasks": ["Specific, actionable task 1", "Specific, actionable task 2", "Practice exercise or project"]
     }
   ]
 }
-`;
+
+CRITICAL: 
+- The "day" field MUST be a NUMBER (1, 2, 3, 4, 5, 6, or 7)
+- Do NOT use ranges like "1-2" or "3-4"
+- Each day should be a separate object
+- Return exactly 7 days in preparationPlan
+- For skill gaps, severity MUST be EXACTLY one of these three values: "low", "medium", or "high"
+- Do NOT use values like "none", "critical", "minor", "optional", "required", "essential", etc.
+- Use "low" for nice-to-have or minor gaps
+- Use "medium" for important gaps that should be addressed
+- Use "high" for critical gaps essential to the role`;
 
   const response = await groq.chat.completions.create({
     model: "llama-3.1-8b-instant",
@@ -159,12 +176,20 @@ IMPORTANT:
 
 function parseAiJson(text) {
   try {
-    // remove markdown code blocks
+    // Remove markdown code blocks and language specifiers
     let cleaned = text
-      .replace(/```[\s\S]*?```/g, "")
+      .replace(/```json\n?/g, "")
+      .replace(/```html\n?/g, "")
+      .replace(/```\n?/g, "")
       .trim();
 
-    // extract JSON between first { and last }
+    // If response contains both JSON and HTML, try to extract just the JSON part
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      cleaned = jsonMatch[0];
+    }
+
+    // Extract JSON between first { and last }
     const start = cleaned.indexOf("{");
     const end = cleaned.lastIndexOf("}");
 
@@ -176,24 +201,36 @@ function parseAiJson(text) {
     try {
       return JSON.parse(cleaned);
     } catch (e1) {
-      // If parsing fails, clean up unescaped newlines and special characters in strings
-      // Replace actual newlines/tabs inside quoted strings with escaped versions
-      let fixed = cleaned.replace(/("(?:[^"\\]|\\.)*")/g, (match) => {
+      // If parsing fails, fix common issues
+      let fixed = cleaned;
+
+      // Fix unescaped newlines and special characters inside quoted strings
+      fixed = fixed.replace(/("(?:[^"\\]|\\.)*")/g, (match) => {
         return match
-          .replace(/\n/g, '\\n')
-          .replace(/\r/g, '\\r')
-          .replace(/\t/g, '\\t');
+          .replace(/\n/g, "\\n")
+          .replace(/\r/g, "\\r")
+          .replace(/\t/g, "\\t")
+          .replace(/\\/g, "\\\\");
       });
-      
+
       try {
         return JSON.parse(fixed);
       } catch (e2) {
-        // Last attempt: try fixing template literals
-        fixed = fixed.replace(/`([^`]*)`/g, '"$1"');
-        return JSON.parse(fixed);
+        // Fix broken HTML tags (unclosed or misformatted)
+        fixed = fixed.replace(/<b(?![^>]*>)/g, "<b>")
+          .replace(/<\/b(?![^>]*>)/g, "</b>")
+          .replace(/&/g, "&amp;")
+          .replace(/'/g, "\\'");
+
+        try {
+          return JSON.parse(fixed);
+        } catch (e3) {
+          // Last attempt: try fixing template literals
+          fixed = fixed.replace(/`([^`]*)`/g, '"$1"');
+          return JSON.parse(fixed);
+        }
       }
     }
-
   } catch (err) {
     console.log("❌ Raw AI Response:\n", text);
     throw err;
@@ -201,23 +238,49 @@ function parseAiJson(text) {
 }
 
 async function generatePdfFromHtml(htmlContent) {
-  const browser = await puppeteer.launch();
-  const page = await browser.newPage();
-  await page.setContent(htmlContent, { waitUntil: "networkidle0" });
+  try {
+    if (!htmlContent || typeof htmlContent !== "string") {
+      throw new Error("Invalid HTML content provided");
+    }
 
-  const pdfBuffer = await page.pdf({
-    format: "A4",
-    margin: {
-      top: "20mm",
-      bottom: "20mm",
-      left: "15mm",
-      right: "15mm",
-    },
-  });
+    const browser = await puppeteer.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    
+    const page = await browser.newPage();
+    
+    // Set content with error handling
+    try {
+      await page.setContent(htmlContent, { waitUntil: "networkidle0", timeout: 10000 });
+    } catch (contentError) {
+      console.error("Error setting page content:", contentError);
+      // Continue anyway - the page might still render
+    }
 
-  await browser.close();
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      displayHeaderFooter: false,
+      margin: {
+        top: "12mm",
+        bottom: "12mm",
+        left: "12mm",
+        right: "12mm",
+      },
+      printBackground: false,
+      preferCSSPageSize: true,
+    });
 
-  return pdfBuffer;
+    await browser.close();
+
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      throw new Error("PDF generation produced empty buffer");
+    }
+
+    return pdfBuffer;
+  } catch (error) {
+    console.error("PDF generation error:", error);
+    throw new Error(`Failed to generate PDF: ${error.message}`);
+  }
 }
 
 async function generateResumePdf({
@@ -225,38 +288,50 @@ async function generateResumePdf({
   selfDescription,
   jobDescription,
 }) {
-  const resumePdfSchema = z.object({
-    html: z
-      .string()
-      .describe(
-        "The HTML content of the resume which can be converted to PDF using any library like puppeteer",
-      ),
-  });
+  const prompt = `Create a professional ATS-friendly resume in ONE A4 page format. Extract or infer contact details from the provided information.
 
-  const prompt = `Generate resume for a candidate with the following details:
+CANDIDATE INFO:
 Resume: ${resume}
 Self Description: ${selfDescription}
-Job Description: ${jobDescription}
 
-IMPORTANT - Return ONLY valid JSON:
-- Use double quotes for all strings
-- Do NOT use backticks, template literals, or markdown formatting
-- Do NOT add markdown code blocks (\`\`\`)
-- Do NOT add any text before or after the JSON
-- Escape special characters properly
-- Return ONLY this exact structure:
+TARGET JOB:
+${jobDescription}
 
+CRITICAL INSTRUCTIONS:
+1. Create ONLY an HTML resume document (no commentary, no explanation, no extra text)
+2. Return ONLY valid JSON - nothing else before or after
+3. Do NOT include any markdown, code blocks, or explanations
+4. The JSON MUST contain ONLY these two keys: "html" and nothing else
+5. The "html" value must be a valid HTML string with ALL quotes properly escaped
+6. Use double quotes for all JSON strings
+7. Escape special characters: \\ for backslash, \" for quotes, \\n for newlines
+
+RESUME STRUCTURE (in this exact order):
+1. HEADER: Name (bold), Phone | Email | LinkedIn | GitHub (clickable links)
+2. PROFESSIONAL SUMMARY: 2-3 sentences
+3. TECHNICAL SKILLS: Categories like Languages, Frameworks, Databases, Tools
+4. EXPERIENCE: Job title, dates, company, 2-3 bullet points with metrics
+5. PROJECTS: 1-3 relevant projects with technologies
+6. ACHIEVEMENTS & CERTIFICATIONS: Brief list
+
+HTML REQUIREMENTS:
+- DOCTYPE html with head and body tags
+- Font: Arial or Helvetica, sans-serif
+- Body text: 9pt, line-height: 1.2
+- Section headers: 10pt, bold, #2c3e50 color
+- Name: 14pt, bold
+- Margins: 0.5 inches
+- Inline CSS only, no external stylesheets
+- Use <a> tags for email (mailto:) and LinkedIn/GitHub links
+- Use bullet points (•) or <ul><li> for lists
+- No page breaks, no graphics, no images
+
+RETURN FORMAT - ONLY THIS STRUCTURE, NOTHING ELSE:
 {
-  "html": "<!DOCTYPE html>..."
+  "html": "<html>...complete valid HTML document with all special characters properly escaped...</html>"
 }
 
-The HTML content should be tailored for the given job description and highlight the candidate's strengths and relevant experience. 
-- Use simple and professional design with basic CSS
-- Make it ATS-friendly (easily parsable by ATS systems)
-- Keep it 1-2 pages when converted to PDF
-- Focus on quality over quantity
-- Sound like a human-written resume, not AI-generated
-- Include all relevant information that increases chances of getting an interview`;
+START CREATING THE RESUME NOW. RESPOND ONLY WITH THE JSON OBJECT.`;
 
   const response = await groq.chat.completions.create({
     model: "llama-3.1-8b-instant",
@@ -269,9 +344,106 @@ The HTML content should be tailored for the given job description and highlight 
   });
 
   const text = response.choices[0].message.content;
-  const jsonContent = parseAiJson(text);
+  
+  let jsonContent;
+  try {
+    jsonContent = parseAiJson(text);
+  } catch (parseError) {
+    console.error("Failed to parse AI response, using fallback resume generator:", parseError);
+    // Use fallback resume generator
+    const fallbackHtml = generateFallbackResume({ resume, selfDescription, jobDescription });
+    jsonContent = { html: fallbackHtml };
+  }
+
+  if (!jsonContent.html || typeof jsonContent.html !== "string") {
+    console.error("Invalid HTML content, generating fallback resume");
+    const fallbackHtml = generateFallbackResume({ resume, selfDescription, jobDescription });
+    jsonContent = { html: fallbackHtml };
+  }
 
   return await generatePdfFromHtml(jsonContent.html);
+}
+
+function generateFallbackResume({ resume, selfDescription, jobDescription }) {
+  // Extract basic info from resume or use self description
+  const nameMatch = resume.match(/^(\w+[\w\s]*)/m) || ["", "Candidate"];
+  const name = nameMatch[1].trim() || "Candidate";
+  
+  const emailMatch = resume.match(/[\w\.-]+@[\w\.-]+\.\w+/) || ["contact@example.com"];
+  const email = emailMatch[0];
+  
+  // Create a basic but valid HTML resume
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resume - ${name}</title>
+  <style>
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9pt;
+      line-height: 1.2;
+      margin: 0.5in;
+      color: #333;
+    }
+    h1 {
+      font-size: 14pt;
+      font-weight: bold;
+      margin: 0 0 3pt 0;
+      color: #2c3e50;
+    }
+    h2 {
+      font-size: 10pt;
+      font-weight: bold;
+      margin: 8pt 0 4pt 0;
+      color: #2c3e50;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 2pt;
+    }
+    p {
+      margin: 3pt 0;
+    }
+    ul {
+      margin: 3pt 0;
+      padding-left: 20pt;
+    }
+    li {
+      margin: 2pt 0;
+    }
+    a {
+      color: #0066cc;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>${name}</h1>
+  <p>Email: <a href="mailto:${email}">${email}</a> | LinkedIn: <a href="https://linkedin.com">LinkedIn</a> | GitHub: <a href="https://github.com">GitHub</a></p>
+  
+  <h2>Professional Summary</h2>
+  <p>${selfDescription || 'Professional with strong technical skills and experience in software development.'}</p>
+  
+  <h2>Technical Skills</h2>
+  <p>• Web Development • MERN Stack • JavaScript • React.js • Node.js • MongoDB • Express.js</p>
+  
+  <h2>Experience</h2>
+  <p><strong>Developer/Student</strong></p>
+  <p>Gained experience in full-stack development and modern web technologies through projects and learning.</p>
+  
+  <h2>Projects</h2>
+  <ul>
+    <li>Developed applications using MERN Stack</li>
+    <li>Built responsive web interfaces with React.js</li>
+    <li>Implemented backend services with Node.js and Express.js</li>
+  </ul>
+  
+  <h2>Education & Certifications</h2>
+  <p>• Computer Science/Technology related studies</p>
+</body>
+</html>`;
+  
+  return html;
 }
 
 module.exports = { generateInterviewReport, generateResumePdf };

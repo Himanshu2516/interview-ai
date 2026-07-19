@@ -12,9 +12,19 @@
     &.primary-button{
         background-color: rgb(238, 38, 121);
         color: white;
+
+        &:hover:not(:disabled) {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+
+        &:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
     }
 
-    &:active{
+    &:active:not(:disabled){
         transform: scale(0.9);
     }
 }

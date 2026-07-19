@@ -60,20 +60,32 @@ export const useInterview = () => {
 
     const getResumePdf = async (interviewReportId) => {
         setLoading(true)
-        let response = null
         try {
-            response = await generateResumePdf({ interviewReportId })
+            const response = await generateResumePdf({ interviewReportId })
+            
+            // Ensure response is a Blob
+            if (!(response instanceof Blob)) {
+                throw new Error("Invalid response type for PDF")
+            }
+
             const url = window.URL.createObjectURL(response)
             const link = document.createElement("a")
             link.href = url
             link.setAttribute("download", `resume_${interviewReportId}.pdf`)
             document.body.appendChild(link)
             link.click()
-            document.body.removeChild(link)
-            window.URL.revokeObjectURL(url)
+            
+            // Clean up
+            setTimeout(() => {
+                document.body.removeChild(link)
+                window.URL.revokeObjectURL(url)
+            }, 100)
+
+            alert("✅ Resume downloaded successfully!")
         }
         catch (error) {
-            console.log(error)
+            console.error("Resume download error:", error)
+            alert("❌ Failed to download resume. Please try again.")
         } finally {
             setLoading(false)
         }

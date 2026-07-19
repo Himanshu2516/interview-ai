@@ -18,6 +18,75 @@ $severity-low: #3fb950;
     display: none;
 }
 
+// ── Top Navbar ────────────────────────────────────────────────────────────────
+.top-navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background-color: $bg-card;
+    border-bottom: 1px solid $border-color;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    z-index: 1000;
+
+    .navbar-brand {
+        h2 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: $accent;
+            letter-spacing: -0.5px;
+        }
+    }
+
+    .navbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+
+        .user-name {
+            color: $text-primary;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .logout-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background-color: transparent;
+            border: 1px solid $accent;
+            border-radius: 0.5rem;
+            color: $accent;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            font-family: $font-stack;
+            transition: all 0.2s ease;
+
+            &:hover {
+                background-color: rgba($accent, 0.1);
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba($accent, 0.2);
+            }
+
+            &:active {
+                transform: translateY(0);
+            }
+
+            svg {
+                width: 16px;
+                height: 16px;
+            }
+        }
+    }
+}
+
 // ── Page Shell ────────────────────────────────────────────────────────────────
 .interview-page {
     width: 100%;
@@ -26,8 +95,10 @@ $severity-low: #3fb950;
     color: $text-primary;
     font-family: $font-stack;
     display: flex;
+    flex-direction: column;
     align-items: stretch;
-    padding: 1.5rem;
+    padding: 0;
+    padding-top: 60px;
     box-sizing: border-box;
 }
 
@@ -41,6 +112,7 @@ $severity-low: #3fb950;
     border: 1px solid $border-color;
     border-radius: 1rem;
     justify-content: space-between;
+    padding: 1.5rem;
 }
 
 .interview-divider {

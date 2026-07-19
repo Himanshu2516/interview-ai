@@ -2,19 +2,45 @@ import React, { useState, useRef } from 'react'
 import "../style/home.scss"
 import { useInterview } from '../hooks/useInterview.js'
 import { useNavigate } from 'react-router'
+import { useAuth } from '../../auth/hooks/useAuth.js'
 
 const Home = () => {
 
     const { loading, generateReport,reports } = useInterview()
+    const { user, handleLogout } = useAuth()
     const [ jobDescription, setJobDescription ] = useState("")
     const [ selfDescription, setSelfDescription ] = useState("")
+    const [ resumeFile, setResumeFile ] = useState(null)
+    const [ uploadMessage, setUploadMessage ] = useState("")
     const resumeInputRef = useRef()
     const MAX_RESUME_SIZE = 2 * 1024 * 1024 // 2MB
 
     const navigate = useNavigate()
 
+    const handleLogoutClick = async () => {
+        try {
+            await handleLogout()
+            navigate('/login')
+        } catch (err) {
+            alert('Logout failed. Please try again.')
+        }
+    }
+
+    const handleResumeUpload = (e) => {
+        const file = e.target.files[0]
+        if (file) {
+            if (file.size > MAX_RESUME_SIZE) {
+                setUploadMessage("❌ Resume file must be 2MB or smaller.")
+                setResumeFile(null)
+                return
+            }
+            setResumeFile(file)
+            setUploadMessage(`✅ Resume uploaded successfully: ${file.name}`)
+            setTimeout(() => setUploadMessage(""), 3000)
+        }
+    }
+
     const handleGenerateReport = async () => {
-        const resumeFile = resumeInputRef.current.files[ 0 ]
         if (!jobDescription.trim()) {
             alert('Please provide a job description.')
             return
@@ -46,6 +72,24 @@ const Home = () => {
     return (
         <div className='home-page'>
 
+            {/* Top Navbar */}
+            <nav className='top-navbar'>
+                <div className='navbar-brand'>
+                    <h2>Interview AI</h2>
+                </div>
+                <div className='navbar-actions'>
+                    {user && <span className='user-name'>Welcome, {user.username}</span>}
+                    <button 
+                        onClick={handleLogoutClick}
+                        className='logout-btn'
+                        title="Click to logout"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+                        Logout
+                    </button>
+                </div>
+            </nav>
+
             {/* Page Header */}
             <header className='page-header'>
                 <h1>Create Your Custom <span className='highlight'>Interview Plan</span></h1>
@@ -71,7 +115,7 @@ const Home = () => {
                             placeholder={`Paste the full job description here...\ne.g. 'Senior Frontend Engineer at Google requires proficiency in React, TypeScript, and large-scale system design...'`}
                             maxLength={5000}
                         />
-                        <div className='char-counter'>0 / 5000 chars</div>
+                        <div className='char-counter'>{jobDescription.length} / 5000 chars</div>
                     </div>
 
                     {/* Vertical Divider */}
@@ -98,8 +142,19 @@ const Home = () => {
                                 </span>
                                 <p className='dropzone__title'>Click to upload or drag &amp; drop</p>
                                 <p className='dropzone__subtitle'>PDF or DOCX (Max 2MB)</p>
-                                <input ref={resumeInputRef} hidden type='file' id='resume' name='resume' accept='.pdf,.docx' />
+                                <input ref={resumeInputRef} hidden type='file' id='resume' name='resume' accept='.pdf,.docx' onChange={handleResumeUpload} />
                             </label>
+                            {uploadMessage && (
+                                <div className='upload-message'>
+                                    <p>{uploadMessage}</p>
+                                </div>
+                            )}
+                            {resumeFile && (
+                                <div className='resume-info'>
+                                    <span className='resume-icon'>📄</span>
+                                    <span className='resume-name'>{resumeFile.name}</span>
+                                </div>
+                            )}
                         </div>
 
                         {/* OR Divider */}

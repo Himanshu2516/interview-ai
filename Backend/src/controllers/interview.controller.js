@@ -25,6 +25,65 @@ async function generateInterViewReportController(req, res) {
             jobDescription
         })
 
+        // Validate and clean preparationPlan data
+        if (interViewReportByAi.preparationPlan && Array.isArray(interViewReportByAi.preparationPlan)) {
+            interViewReportByAi.preparationPlan = interViewReportByAi.preparationPlan.map((plan, index) => {
+                let day = plan.day;
+                
+                // Convert day to number if it's a string
+                if (typeof day === 'string') {
+                    // Extract first number from strings like "1-2", "3-4", etc.
+                    const match = day.match(/^\d+/);
+                    day = match ? parseInt(match[0], 10) : (index + 1);
+                } else if (typeof day === 'number') {
+                    day = Math.floor(day);
+                } else {
+                    day = index + 1;
+                }
+
+                // Ensure day is between 1 and 7
+                day = Math.max(1, Math.min(7, day));
+
+                return {
+                    ...plan,
+                    day
+                };
+            });
+        }
+
+        // Validate and clean skillGaps data
+        if (interViewReportByAi.skillGaps && Array.isArray(interViewReportByAi.skillGaps)) {
+            interViewReportByAi.skillGaps = interViewReportByAi.skillGaps.map((gap) => {
+                let severity = gap.severity;
+                
+                // Normalize severity to valid enum values
+                const validSeverities = ['low', 'medium', 'high'];
+                severity = severity ? severity.toString().toLowerCase().trim() : 'medium';
+                
+                // If severity is not valid, map it to the closest valid value
+                if (!validSeverities.includes(severity)) {
+                    // Map common invalid values to valid ones
+                    const severityMap = {
+                        'none': 'low',
+                        'minor': 'low',
+                        'critical': 'high',
+                        'important': 'high',
+                        'nice-to-have': 'low',
+                        'required': 'high',
+                        'essential': 'high',
+                        'optional': 'low'
+                    };
+                    
+                    severity = severityMap[severity] || 'medium';
+                }
+
+                return {
+                    ...gap,
+                    severity
+                };
+            });
+        }
+
         const interviewReport = await interviewReportModel.create({
             user: req.user.id,
             resume: resumeContent.text,
@@ -85,26 +144,40 @@ async function getAllInterviewReportsController(req, res) {
  * @description Controller to generate resume PDF based on user self description, resume and job description.
  */
 async function generateResumePdfController(req, res) {
-    const { interviewReportId } = req.params
+    try {
+        const { interviewReportId } = req.params
 
-    const interviewReport = await interviewReportModel.findById(interviewReportId)
+        const interviewReport = await interviewReportModel.findById(interviewReportId)
 
-    if (!interviewReport) {
-        return res.status(404).json({
-            message: "Interview report not found."
+        if (!interviewReport) {
+            return res.status(404).json({
+                message: "Interview report not found."
+            })
+        }
+
+        const { resume, jobDescription, selfDescription } = interviewReport
+
+        const pdfBuffer = await generateResumePdf({ resume, jobDescription, selfDescription })
+
+        if (!pdfBuffer || pdfBuffer.length === 0) {
+            return res.status(500).json({
+                message: "Failed to generate resume PDF."
+            })
+        }
+
+        res.set({
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `attachment; filename=resume_${interviewReportId}.pdf`,
+            "Content-Length": pdfBuffer.length
+        })
+
+        res.send(pdfBuffer)
+    } catch (error) {
+        console.error('Error generating resume PDF:', error)
+        res.status(500).json({
+            message: "Failed to generate resume PDF. Please try again."
         })
     }
-
-    const { resume, jobDescription, selfDescription } = interviewReport
-
-    const pdfBuffer = await generateResumePdf({ resume, jobDescription, selfDescription })
-
-    res.set({
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename=resume_${interviewReportId}.pdf`
-    })
-
-    res.send(pdfBuffer)
 }
 
 module.exports = { generateInterViewReportController, getInterviewReportByIdController, getAllInterviewReportsController, generateResumePdfController }
